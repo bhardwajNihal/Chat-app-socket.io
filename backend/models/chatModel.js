@@ -3,8 +3,8 @@ import mongoose from "mongoose";
 
 // schema for the chatroom
 
-const chatRoomSchema = mongoose.Schema({
-  chatRoomName: { type: String, required: true },
+const chatSchema = mongoose.Schema({
+  chatName: { type: String, required: true },
   isGroupChat: { type: Boolean, default: false },
   users: {
     type: mongoose.Schema.Types.ObjectId,
@@ -20,4 +20,4 @@ const chatRoomSchema = mongoose.Schema({
   },
 },{timestamps:true});
 
-export const ChatRoom = mongoose.model("ChatRoom", chatRoomSchema);
+export const Chat = mongoose.model("Chat", chatSchema);
