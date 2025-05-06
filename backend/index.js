@@ -6,6 +6,7 @@ import { ConnectToDb } from "./db/dbconnection.js";
 import { User } from "./models/userModel.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { authMiddleware } from "./authMiddleware/authMiddleware.js";
 
 const app = express();
 const port = process.env.PORT;
@@ -13,40 +14,42 @@ app.use(cors());
 app.use(express.json());
 
 
-app.post("/api/user/signup", async(req, res) => {
-    
-    try {
-        const {username, email, password} = req.body;
+// signup endpoint
+    app.post("/api/user/signup", async(req, res) => {
         
-        if(!username || !email || !password){
-            return res.status(400).json({message : "All fields are required!"})
-        } 
+        try {
+            const {username, email, password} = req.body;
+            
+            if(!username || !email || !password){
+                return res.status(400).json({message : "All fields are required!"})
+            } 
 
-        const foundUsername = await User.findOne({username})
-        if(foundUsername){
-            return res.status(400).json({message : "username already taken!"})
+            const foundUsername = await User.findOne({username})
+            if(foundUsername){
+                return res.status(400).json({message : "username already taken!"})
+            }
+
+            const foundemail = await User.findOne({email});
+            if(foundemail){
+                return res.status(400).json({message : "email already registered!"})
+            }
+            
+            const hashedPwd = await bcrypt.hash(password,10);
+
+            await User.create({
+                username, email, password:hashedPwd
+            })
+            
+        return res.status(200).json({ message: "user registered successfully!" });
+
+        } catch (error) {
+            return res.status(500).json({message : "Error registering user!",error})
         }
-
-        const foundemail = await User.findOne({email});
-        if(foundemail){
-            return res.status(400).json({message : "email already registered!"})
-        }
-        
-        const hashedPwd = await bcrypt.hash(password,10);
-
-        await User.create({
-            username, email, password:hashedPwd
-        })
-        
-      return res.status(200).json({ message: "user registered successfully!" });
-
-    } catch (error) {
-        return res.status(500).json({message : "Error registering user!",error})
-    }
-});
+    });
 
 
-app.post("/api/user/signin", async(req, res) => {
+//signin endpoint
+    app.post("/api/user/signin", async(req, res) => {
 
    try {
      const {email, password} = req.body;
@@ -74,9 +77,42 @@ app.post("/api/user/signin", async(req, res) => {
    } catch (error) {
     return res.status(500).json({message : "Error Signing In!", error})
    }
-  });
+    });
 
 
+// endpoint to search users 
+    app.get("/api/user", authMiddleware, async(req, res) => {
+
+        try {
+            //setting up keyword for mongoDb query, if query not provided defaults to empty -> giving all results
+            const keyword = req.query.search ? {
+                // It builds a MongoDB query using $regex with the "i" option (case-insensitive).
+                $or: [
+                    {username: {$regex : req.query.search, $options:"i"} },
+                    {email: {$regex : req.query.search, $options:"i"} }
+                ]
+            }
+            : {}
+
+            const currentUser = req.userId;
+            // return a list excluding the current logged in user
+            const foundUsers = await User.find(keyword).find({ _id : {$ne : currentUser}});
+    
+            return res.status(200).json({users : foundUsers})
+        } catch (error) {
+            return res.status(500).json({message : "Error fetching users!"})
+        }
+
+        
+    })
+
+
+    app.get("/auth", authMiddleware, (req,res) => {
+
+        const userId = req.userId;
+        console.log(userId);
+        
+    })
 
 ConnectToDb()
 .then(() => {
