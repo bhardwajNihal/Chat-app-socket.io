@@ -1,4 +1,4 @@
-import express from "express";
+import express, { json } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 dotenv.config();
@@ -8,6 +8,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { authMiddleware } from "./authMiddleware/authMiddleware.js";
 import { Chat } from "./models/chatModel.js";
+import mongoose from "mongoose";
 
 const app = express();
 const port = process.env.PORT;
@@ -49,8 +50,11 @@ app.post("/api/user/signup", async (req, res) => {
 
 //signin endpoint
 app.post("/api/user/signin", async (req, res) => {
+  console.log("somebody");
+
   try {
     const { email, password } = req.body;
+    console.log(email, password, "somebody");
 
     const foundUser = await User.findOne({ email });
 
@@ -82,7 +86,7 @@ app.post("/api/user/signin", async (req, res) => {
 });
 
 // endpoint to search users
-app.get("/api/user", authMiddleware, async (req, res) => {
+app.get("/api/users", authMiddleware, async (req, res) => {
   try {
     //setting up keyword for mongoDb query, if query not provided defaults to empty -> giving all results
     const keyword = req.query.search
@@ -109,7 +113,7 @@ app.get("/api/user", authMiddleware, async (req, res) => {
 
 // CHAT ROUTES
 // 1. check if a one-to-one chat exits if so return the existing chat, if not create a new chat and then return
-app.post("api/chat-room", authMiddleware, async (req, res) => {
+app.post("/api/chat", authMiddleware, async (req, res) => {
   try {
     const self = req.userId; // user logged in
     const user2 = req.body.userId; // user with whom to start chat with
@@ -119,7 +123,7 @@ app.post("api/chat-room", authMiddleware, async (req, res) => {
     }
 
     // check if chat already exists, if found
-    const foundChat = await Chat.findOne({
+    let foundChat = await Chat.findOne({
       isGroupChat: false,
       $and: [
         { users: { $elemMatch: { $eq: self } } },
@@ -138,15 +142,15 @@ app.post("api/chat-room", authMiddleware, async (req, res) => {
     });
 
     //if chatroom exists return it
-    if (foundChat.lenght > 0) {
-      return res.status(200).json({ chat: foundChat[0] });
+    if (foundChat !== null) {
+      return res.status(200).json({ chat: foundChat });
     }
 
     // if not present, create a fresh chat and return
     const createdChat = await Chat.create({
-      chatRoomName: "sender",
+      chatName: "sender",
       isGroupChat: false,
-      users: [self, user2],
+      users: [self,user2],
     });
 
     // again fetch chat data, populate with user details and return
@@ -164,8 +168,64 @@ app.post("api/chat-room", authMiddleware, async (req, res) => {
   }
 });
 
-// 2. getting list of all chats for a userId
-// 3. creating group
+// 2. getting list of all chats for the logged in user
+  app.get("/api/chats" , authMiddleware, async(req,res) => {
+
+    // simply search through all the chats, the current user is a part of 
+    try {
+      let chats = await Chat.find({
+        users : {$elemMatch : {$eq : req.userId}}
+      })
+      .populate("users", "-password")
+      .populate("latestMessage")
+      .populate("groupAdmin", "-password")
+      .sort({updatedAt : -1})         // sort acc to latest 1st
+      
+      const allChats = await User.populate(chats,{
+        path : "latestMessage.sender",
+        select : "username email"
+      })
+  
+      return res.status(200).json({chats : allChats})
+    } catch (error) {
+      return res.status(500).json({message : "Error fetching chats!", error})
+    }
+  })
+
+// 3. creating a group chat
+  app.post("/api/create-group", authMiddleware, async(req,res) => {
+
+    try {
+      const {chatName, users} = req.body;
+      
+      const usersList = JSON.parse(users);    // users will be stringified array of users
+      if(usersList.length<2){
+        return res.status(400).json({message : "Atleast two users are required to form a group!"})
+      } 
+      usersList.push(req.userId);
+
+      const createdGroup = await Chat.create({
+        chatName,
+        users: usersList,
+        isGroupChat:true,
+        groupAdmin: req.userId
+      })
+      
+  
+      // find the created chat, and populate with users and admin details
+      const groupDetails = await Chat.findOne({
+        _id : createdGroup._id
+      })
+      .populate("users", "-password")
+      .populate("groupAdmin", "-password")
+  
+      return res.status(200).json({groupChat : groupDetails})
+    } catch (error) {
+      return res.status(500).json({message : "Error creating group Chat!", error})
+    }
+  })
+
+
 // 4. renaming group
 // 5. adding someone to the group
 // 6. removing somebody from the group
