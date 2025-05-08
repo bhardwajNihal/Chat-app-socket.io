@@ -113,60 +113,60 @@ app.get("/api/users", authMiddleware, async (req, res) => {
 
 // CHAT ROUTES
 // 1. check if a one-to-one chat exits if so return the existing chat, if not create a new chat and then return
-app.post("/api/chat", authMiddleware, async (req, res) => {
-  try {
-    const self = req.userId; // user logged in
-    const user2 = req.body.userId; // user with whom to start chat with
+  app.post("/api/chat", authMiddleware, async (req, res) => {
+    try {
+      const self = req.userId; // user logged in
+      const user2 = req.body.userId; // user with whom to start chat with
 
-    if (!user2) {
-      return res.status(400).json({ message: "User Id required start chat!" });
+      if (!user2) {
+        return res.status(400).json({ message: "User Id required start chat!" });
+      }
+
+      // check if chat already exists, if found
+      let foundChat = await Chat.findOne({
+        isGroupChat: false,
+        $and: [
+          { users: { $elemMatch: { $eq: self } } },
+          { users: { $elemMatch: { $eq: user2 } } },
+        ],
+      })
+        .populate("users", "-password") //n MongoDB, when we create a relationship between two documents (e.g., a chat has users), we typically store just the ObjectId reference of the related document.
+        .populate("latestMessage"); //Calling .populate() replaces those ObjectIds with the full document data.
+
+      // as latestMessage as a 'sender' field which further refs towards User doc,
+      // so need to populate at one more depth
+      foundChat = await User.populate(foundChat, {
+        // telling to take reference from the User model to populate sender
+        path: "latestMessage.sender",
+        select: "username email",
+      });
+
+      //if chatroom exists return it
+      if (foundChat !== null) {
+        return res.status(200).json({ chat: foundChat });
+      }
+
+      // if not present, create a fresh chat and return
+      const createdChat = await Chat.create({
+        chatName: "sender",
+        isGroupChat: false,
+        users: [self,user2],
+      });
+
+      // again fetch chat data, populate with user details and return
+      const fullChat = await Chat.findOne({ _id: createdChat._id }).populate(
+        "users",
+        "-password"
+      );
+
+      // finally return the created chat
+      return res.status(200).json({ chat: fullChat });
+    } catch (error) {
+      return res
+        .status(500)
+        .json({ message: "Error accessing Chat Data!", error });
     }
-
-    // check if chat already exists, if found
-    let foundChat = await Chat.findOne({
-      isGroupChat: false,
-      $and: [
-        { users: { $elemMatch: { $eq: self } } },
-        { users: { $elemMatch: { $eq: user2 } } },
-      ],
-    })
-      .populate("users", "-password") //n MongoDB, when we create a relationship between two documents (e.g., a chat has users), we typically store just the ObjectId reference of the related document.
-      .populate("latestMessage"); //Calling .populate() replaces those ObjectIds with the full document data.
-
-    // as latestMessage as a 'sender' field which further refs towards User doc,
-    // so need to populate at one more depth
-    foundChat = await User.populate(foundChat, {
-      // telling to take reference from the User model to populate sender
-      path: "latestMessage.sender",
-      select: "username email",
-    });
-
-    //if chatroom exists return it
-    if (foundChat !== null) {
-      return res.status(200).json({ chat: foundChat });
-    }
-
-    // if not present, create a fresh chat and return
-    const createdChat = await Chat.create({
-      chatName: "sender",
-      isGroupChat: false,
-      users: [self,user2],
-    });
-
-    // again fetch chat data, populate with user details and return
-    const fullChat = await Chat.findOne({ _id: createdChat._id }).populate(
-      "users",
-      "-password"
-    );
-
-    // finally return the created chat
-    return res.status(200).json({ chat: fullChat });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Error accessing Chat Data!", error });
-  }
-});
+  });
 
 // 2. getting list of all chats for the logged in user
   app.get("/api/chats" , authMiddleware, async(req,res) => {
@@ -225,10 +225,96 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     }
   })
 
-
 // 4. renaming group
+  app.put("/api/chat/rename", authMiddleware, async(req,res) => {
+
+    try {
+      // take chatId and new name from the body, update db
+      const {newName, chatId} = req.body;
+  
+      const updatedChat = await Chat.findByIdAndUpdate(chatId,{
+        chatName : newName
+      },{new:true})   //to return the updated value
+      .populate("users","-password")
+      .populate("groupAdmin","-password")
+
+      if(!updatedChat){
+        return res.status(400).json({message : "Chat not found!"})
+      }
+  
+      return res.status(200).json({message : "Chat renamed successfully!", updatedChat})
+    } catch (error) {
+      return res.status(500).json({message : "Error renaming Chat!", error})
+    }
+  })
+
 // 5. adding someone to the group
+  app.post("/api/chat/add-user", authMiddleware, async(req,res) => {
+
+    // get userId, and chatId from the body, find chat and push the user into the users array
+    try {
+      const {userId, chatId} = req.body;
+  
+      // check if user already exists in the chat
+      const foundUser = await Chat.findOne({
+        _id: chatId,
+        users : {$in : [userId]}
+      })
+      if(foundUser) {
+        return res.status(400).json({message : "User already exists in the group!"})
+      }
+    
+      const updatedChat = await Chat.findByIdAndUpdate(chatId, {
+        $push : {users : userId}
+      },
+      {new:true})
+      .populate("users", "-password")
+      .populate("groupAdmin", "-password")
+  
+      if(!updatedChat){
+        return res.status(400).json({message : "Chat not found!"})
+      }
+  
+      return res.status(200).json({message : "user added successfully to chat!", updatedChat})
+    } catch (error) {
+      return res.status(500).json({message : "Error adding user to chat!",error})
+    }
+
+  })
+
 // 6. removing somebody from the group
+  app.post("/api/chat/remove-user", authMiddleware, async(req,res) => {
+
+    // get userId, and chatId from the body, find chat and push the user into the users array
+    try {
+      const {userId, chatId} = req.body;
+
+      // check if user already exists in the chat
+      const foundUser = await Chat.findOne({
+        _id: chatId,
+        users : {$in : [userId]}
+      })
+      if(!foundUser) {
+        return res.status(400).json({message : "User doesn't exist in the group!"})
+      }
+    
+      const updatedChat = await Chat.findByIdAndUpdate(chatId, {
+        $pull : {users : userId}
+      },
+      {new:true})
+      .populate("users", "-password")
+      .populate("groupAdmin", "-password")
+
+      if(!updatedChat){
+        return res.status(400).json({message : "Chat not found!"})
+      }
+
+      return res.status(200).json({message : "user removed successfully from the chat!", updatedChat})
+    } catch (error) {
+      return res.status(500).json({message : "Error adding user to chat!",error})
+    }
+
+  })
 
 ConnectToDb()
   .then(() => {
