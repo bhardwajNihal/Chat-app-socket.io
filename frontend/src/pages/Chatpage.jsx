@@ -2,7 +2,7 @@
 import axios from "axios";
 import { useEffect, useState } from "react";
 import { CiLogout, CiSearch } from "react-icons/ci";
-import { useAsyncError, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 const Chatpage = () => {
 
@@ -132,16 +132,16 @@ const Chatpage = () => {
 
                 {/* chats list */}
                 <div className="listitems h-110 w-full border rounded-lg border-gray-300 flex flex-col gap-1 p-2">
-                    {chats && chats.length > 0 && chats.map((chat) =>
-                        <div key={chat._id}
+                    {chats && chats.length > 0 && chats.map((chatItem) =>
+                        <div key={chatItem._id}
                             className="border border-gray-400 p-1 flex items-center gap-2 rounded-lg hover:shadow-sm hover:shadow-orange-500"
                         >
                             <div className="h-7 w-7 bg-orange-500 text-white rounded-full flex items-center justify-center">
-                                {chat.chatName.split("")[0].toUpperCase()}
+                                {chatItem.chatName.split("")[0].toUpperCase()}
                             </div>
                             <div>
-                                <div>{chat.chatName}</div>
-                                <div className="text-sm text-gray-400">{chat.latestMessage ? chat.latestMessage : "hello there"}</div>
+                                <div>{chatItem.chatName}</div>
+                                <div className="text-sm text-gray-400">{chatItem.latestMessage ? chatItem.latestMessage : "hello there"}</div>
                             </div>
                         </div>)}
                 </div>
