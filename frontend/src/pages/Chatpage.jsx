@@ -1,9 +1,9 @@
 
 import axios from "axios";
 import { useEffect, useState } from "react";
-import { CiLogout, CiSearch } from "react-icons/ci";
+import { CiEdit, CiLogout, CiSearch } from "react-icons/ci";
 import { useNavigate } from "react-router-dom";
-import { FaPlus } from "react-icons/fa6";
+import { FaEye, FaPlus } from "react-icons/fa6";
 import { MdGroupAdd } from "react-icons/md";
 
 
@@ -17,6 +17,10 @@ const Chatpage = () => {
     const [groupUsers, setGroupUsers] = useState([]);
     const [groupName, setGroupName] = useState("");
     const [iscreating, setIscreating] = useState(false);
+    const [selectedChat, setSelectedChat] = useState(null)
+    const [chatDetailsModal, setChatDetailsModal] = useState(false);
+    const [currentChatMessages, setCurrentChatMessages] = useState([]);
+    const [message, setMessage] = useState("")
     // fetch current userdata, feed it to state
     async function fetchUser() {
         const res = await axios.get("http://localhost:3001/api/user", {
@@ -89,19 +93,19 @@ const Chatpage = () => {
         }
     }
 
-    async function handleCreateGroup(){
+    async function handleCreateGroup() {
         const userIds = JSON.stringify(groupUsers.map(user => user._id))
-        if(!groupName) alert("group name is required!")
-        
+        if (!groupName) alert("group name is required!")
+
         // api call to create a group
         setIscreating(true);
         try {
             await axios.post("http://localhost:3001/api/create-group", {
-                chatName : groupName,
-                users : userIds
-            },{
-                headers : {
-                    authorization : `Bearer ${localStorage.getItem("token")}`
+                chatName: groupName,
+                users: userIds
+            }, {
+                headers: {
+                    authorization: `Bearer ${localStorage.getItem("token")}`
                 }
             })
             setIscreating(false);
@@ -115,19 +119,58 @@ const Chatpage = () => {
             alert(error.response.data.message)
             setIscreating(false)
         }
-        
-        
-        
+
+    }
+
+
+    // fetching messages for the selected chat
+    useEffect(() => {
+        async function fetchMessages() {
+            if (selectedChat === null) return;
+            const res = await axios.get(`http://localhost:3001/api/chat/messages/${selectedChat._id}`, {
+                headers: {
+                    authorization: `Bearer ${localStorage.getItem("token")}`
+                }
+            })
+            setCurrentChatMessages(res.data);
+        }
+        fetchMessages()
+    }, [selectedChat])
+
+    // function to send message 
+    async function handleSendMessage() {
+        const res = await axios.post("http://localhost:3001/api/chat/message",{
+            chatId : selectedChat._id,
+            message : message
+        },{
+            headers: {
+                authorization : `Bearer ${localStorage.getItem("token")}`
+            }
+        })
+        setCurrentChatMessages(prev => ([...prev, res.data]));
         
     }
 
-    useEffect(() => {
-        console.log(groupUsers);
 
-    }, [groupUsers])
+    useEffect(() => {
+        console.log("selected chat data : ", selectedChat);
+        console.log(currentChatMessages);
+
+    }, [selectedChat, currentChatMessages])
+
+
+    function formatDateTime(dateString) {
+        const date = new Date(dateString);
+        const day = String(date.getDate()).padStart(2, '0'); // dd
+        const month = String(date.getMonth() + 1).padStart(2, '0'); // mm
+        const hours = String(date.getHours()).padStart(2, '0'); // HH
+        const minutes = String(date.getMinutes()).padStart(2, '0'); // MM
+
+        return `${day}/${month} ${hours}:${minutes}`;
+    }
 
     const navigate = useNavigate();
-    return <div className="h-screen w-full" onClick={() => setUserslist("")}>
+    return <div className="h-screen w-full" onClick={() => setUserslist([])}>
 
         {/* navbar */}
         <div className="navbar h-12 w-full border-b border-gray-500 px-8 flex justify-between items-center">
@@ -154,7 +197,7 @@ const Chatpage = () => {
             </div>
         </div>
 
-        <div className="h-full w-full">
+        <div className="h-full w-full flex">
             {/* list of chats of the current user */}
             <div className="chatlist h-full w-1/4 border-r border-gray-500 p-3 flex flex-col gap-2">
 
@@ -179,7 +222,7 @@ const Chatpage = () => {
                         <div className="border border-orange-500 max-h-[250px] overflow-hidden overflow-y-auto w-[95%] rounded-lg absolute p-2 top-11 left-2 backdrop-blur-xl">
                             {userslist.map(item =>
                                 <div
-                                    key={item.id}
+                                    key={item._id}
                                     onClick={() => handleChat(item._id)}
                                     className="border flex items-center justify-start gap-2 mb-1 rounded-lg p-1 border-gray-300 hover:shadow-sm hover:shadow-orange-500">
                                     <div className="h-7 w-7 bg-orange-500 text-white rounded-full flex items-center justify-center">
@@ -198,7 +241,8 @@ const Chatpage = () => {
                     <h2 className="text-lg font-semibold mx-2 mb-2">My chats</h2>
                     {chats && chats.length > 0 && chats.map((chatItem) =>
                         <div key={chatItem._id}
-                            className="border border-gray-400 p-1 flex items-center gap-2 rounded-lg hover:shadow-sm hover:shadow-orange-500"
+                            onClick={() => { setSelectedChat(chatItem) }}
+                            className={`border border-gray-400 ${(selectedChat && selectedChat._id === chatItem._id) ? "border-orange-500 bg-orange-100" : ""} p-1 flex items-center gap-2 rounded-lg hover:shadow-sm hover:shadow-orange-500`}
                         >
                             <div className="h-7 w-7 bg-orange-500 text-white rounded-full flex items-center justify-center">
                                 {(chatItem.isGroupChat) ? <MdGroupAdd /> : getChatName(chatItem).split("")[0].toUpperCase()}
@@ -206,7 +250,7 @@ const Chatpage = () => {
                             <div>
                                 {/* logic to dynamically render the chatname,  */}
                                 <div>{getChatName(chatItem)}</div>
-                                <div className="text-sm text-gray-400">{chatItem.latestMessage ? chatItem.latestMessage : "hello there"}</div>
+                                <div className="text-sm text-gray-400">{chatItem.latestMessage ? <span className="text-gray-500"><span className="font-semibold">{chatItem.latestMessage.sender.username} : </span>{chatItem.latestMessage.content}</span> : null}</div>
                             </div>
                         </div>)}
                 </div>
@@ -223,8 +267,59 @@ const Chatpage = () => {
             </div>
 
             {/* current chat */}
-            <div className="chat ">
+            <div className="curnent-chat h-screen w-3/4 bg-green-500">
+                {selectedChat !== null
+                    ? <div>
+                        <div className="top border-b border-gray-400 w-full h-12 flex items-center justify-between px-8 relative">
+                            <div className="chatname text-xl font-semibold">{selectedChat && getChatName(selectedChat)}</div>
+                            <div className="details" onClick={() => setChatDetailsModal(true)}><FaEye size={"18px"} /></div>
+                            {chatDetailsModal && <div className="chatDetailsModal p-4 min-h-56 min-w-48 shadow-lg shadow-orange-400 absolute top-10 right-5"><span className="text-xl hover:bg-gray-200 px-2 rounded absolute top-0 right-0 m-2 mt-3 cursor-pointer" onClick={() => setChatDetailsModal(false)}>x</span>
+                                {selectedChat && selectedChat.isGroupChat ? <h2 className="text-lg text-orange-500 text-center mt-2 ">Group details</h2> : <h2 className="text-lg text-orange-500 text-center mt-2 ">User details</h2>}
 
+                                {selectedChat && selectedChat.isGroupChat === false
+                                    ? <div className="flex items-center justify-center flex-col">
+                                        <img className="w-32 " src={(selectedChat.users[0]._id === user._id) ? selectedChat.users[1].avatar : selectedChat.users[0].avatar} alt="" />
+                                        <p className="text-2xl">{(selectedChat.users[0]._id === user._id) ? selectedChat.users[1].username : selectedChat.users[0].username}</p>
+                                        <p className="text-gray-500">{(selectedChat.users[0]._id === user._id) ? selectedChat.users[1].email : selectedChat.users[0].email}</p>
+                                    </div>
+                                    : <div>
+                                        <div className="flex gap-1 h-8"><input type="text" placeholder={getChatName(selectedChat)} className="border bg-gray-100 rounded border-gray-300 p-1 px-2" /><span><CiEdit size={'32px'} className="bg-orange-500 p-1 rounded text-white" /></span></div>
+
+                                        {selectedChat.users.map(user => <div key={user._id}>{user.username}</div>)}
+                                    </div>
+                                }
+
+
+                            </div>}
+                        </div>
+
+                        <div className="all-messages bg-blue-500 h-[90vh]">
+
+                            <div className="h-[90%] bg-gray-300 flex flex-col gap-1 py-2 px-4 overflow-hidden overflow-y-auto">{
+                                (currentChatMessages && currentChatMessages.length > 0 &&
+                                    currentChatMessages.map(message =>
+                                        <div className={`flex gap-2 ${(message.sender._id === user._id) ? "justify-end" : "justify-start"}`}>
+                                            <div className="text-end">
+                                                <div className={`flex ${(message.sender._id === user._id) ? "justify-end" : "justify-start"} items-center gap-1`}><img className="h-4 rounded-full" src={message.sender.avatar} alt="" /><span className="text-sm text-gray-500">{message.sender.username}</span></div>
+                                                <div className={`border text-xl border-orange-500 w-fit max-width-[70%] px-4 rounded-lg ${(message.sender._id === user._id) ? "rounded-br-none bg-orange-500 text-white" : "rounded-tl-none"}`} key={message._id}>{message.content} <span className="text-xs text-gray-500">{formatDateTime(message.createdAt)}</span></div>
+                                            </div>
+                                        </div>
+
+                                    )
+                                )
+                            }</div>
+                            <div className="h-[10%] bg-green-500 p-1 px-2 flex gap-2">
+                                <input type="text" placeholder="type message..." 
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                className="h-full px-2 w-[90%] bg-gray-200 border border-gray-400 rounded-lg"/>
+                                <button onClick={handleSendMessage} className="text-white bg-orange-500 rounded-lg w-[10%] h-full ">send</button>
+                            </div>
+
+                        </div>
+
+                    </div>
+                    : <div className="h-full w-full flex items-center justify-center text-2xl text-gray-400">Select user to start chatting!</div>}
             </div>
         </div>
 
@@ -233,9 +328,9 @@ const Chatpage = () => {
         {addGroupModal && <div className="absolute top-0 left-0 flex items-center justify-center bg-black/40 h-screen w-full backdrop-blur-xl">
             <div className="min-h-64 w-80 rounded-lg shadow-lg shadow-orange-500 absolute  bg-white p-4 pt-8">
                 <h2 className="text-lg text-orange-500 font-semibold text-center mb-4">New Group Chat</h2>
-                <input 
-                onChange={(e) => setGroupName(e.target.value)}
-                type="text" placeholder="group name..." className="border border-gray-400 rounded w-full h-8 mb-3 px-3  " />
+                <input
+                    onChange={(e) => setGroupName(e.target.value)}
+                    type="text" placeholder="group name..." className="border border-gray-400 rounded w-full h-8 mb-3 px-3  " />
                 <div className="relative">
                     <input
                         value={search}
@@ -254,12 +349,12 @@ const Chatpage = () => {
                                     key={item.id}
                                     onClick={() => {
                                         setGroupUsers((prev) => {
-                                            const aleadyExists = prev.some(i => i._id ===item._id);
-                                            if(aleadyExists){
+                                            const aleadyExists = prev.some(i => i._id === item._id);
+                                            if (aleadyExists) {
                                                 alert("user already added!");
                                                 return prev;
                                             }
-                                            else return [...prev,item]
+                                            else return [...prev, item]
                                         })
 
                                     }}
@@ -279,17 +374,17 @@ const Chatpage = () => {
                 <button className="absolute top-0 right-0 mx-3 text-xl" onClick={() => setAddGroupModal(false)}>x</button>
 
                 <div className="users h-fit w-full mt-1 p-1 flex gap-2 flex-wrap mb-8">
-                    {groupUsers.length>0 && 
-                    groupUsers.map((item) => 
-                    <span key={item._id} className="border border-orange-500 text-sm text-orange-500 rounded px-2">{item.username}
-                    <span 
-                    onClick={() => setGroupUsers((prev) => prev.filter(i => i._id!==item._id) )}
-                    className="text-gray-400 cursor-pointer ml-2">x</span></span> )}
+                    {groupUsers.length > 0 &&
+                        groupUsers.map((item) =>
+                            <span key={item._id} className="border border-orange-500 text-sm text-orange-500 rounded px-2">{item.username}
+                                <span
+                                    onClick={() => setGroupUsers((prev) => prev.filter(i => i._id !== item._id))}
+                                    className="text-gray-400 cursor-pointer ml-2">x</span></span>)}
                 </div>
-                <button 
-                disabled={iscreating}
-                onClick={handleCreateGroup}
-                className="bg-orange-500 text-white rounded p-1 px-4 absolute right-0 bottom-0 m-2">{iscreating ? "Creating..." : "Create"}</button>
+                <button
+                    disabled={iscreating}
+                    onClick={handleCreateGroup}
+                    className="bg-orange-500 text-white rounded p-1 px-4 absolute right-0 bottom-0 m-2">{iscreating ? "Creating..." : "Create"}</button>
             </div>
         </div>}
 
