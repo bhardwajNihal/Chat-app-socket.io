@@ -5,6 +5,8 @@ import { CiEdit, CiLogout, CiSearch } from "react-icons/ci";
 import { useNavigate } from "react-router-dom";
 import { FaEye, FaPlus } from "react-icons/fa6";
 import { MdGroupAdd } from "react-icons/md";
+import { io } from "socket.io-client"
+import { LiaCheckDoubleSolid } from "react-icons/lia";
 
 
 const Chatpage = () => {
@@ -32,6 +34,7 @@ const Chatpage = () => {
     }
     useEffect(() => {
         fetchUser()
+        const socket = io("http://localhost:3001");
     }, [])
 
     // search chat functionality
@@ -139,16 +142,16 @@ const Chatpage = () => {
 
     // function to send message 
     async function handleSendMessage() {
-        const res = await axios.post("http://localhost:3001/api/chat/message",{
-            chatId : selectedChat._id,
-            message : message
-        },{
+        const res = await axios.post("http://localhost:3001/api/chat/message", {
+            chatId: selectedChat._id,
+            message: message
+        }, {
             headers: {
-                authorization : `Bearer ${localStorage.getItem("token")}`
+                authorization: `Bearer ${localStorage.getItem("token")}`
             }
         })
         setCurrentChatMessages(prev => ([...prev, res.data]));
-        
+
     }
 
 
@@ -250,7 +253,13 @@ const Chatpage = () => {
                             <div>
                                 {/* logic to dynamically render the chatname,  */}
                                 <div>{getChatName(chatItem)}</div>
-                                <div className="text-sm text-gray-400">{chatItem.latestMessage ? <span className="text-gray-500"><span className="font-semibold">{chatItem.latestMessage.sender.username} : </span>{chatItem.latestMessage.content}</span> : null}</div>
+                                <div className="text-sm text-gray-400">
+                                    {chatItem.latestMessage
+                                        ? <span className="text-gray-500 flex items-center gap-1">
+                                            <span className="font-semibold">{chatItem.latestMessage.sender._id === user._id ? <LiaCheckDoubleSolid size={"16px"}/> : null}  </span>
+                                            {chatItem.latestMessage.content}
+                                        </span>
+                                        : null}</div>
                             </div>
                         </div>)}
                 </div>
@@ -267,13 +276,13 @@ const Chatpage = () => {
             </div>
 
             {/* current chat */}
-            <div className="curnent-chat h-screen w-3/4 bg-green-500">
+            <div className="curnent-chat h-screen w-3/4">
                 {selectedChat !== null
                     ? <div>
-                        <div className="top border-b border-gray-400 w-full h-12 flex items-center justify-between px-8 relative">
+                        <div className="top border-b border-gray-400 w-full h-12 bg-orange-100 flex items-center justify-between px-8 relative">
                             <div className="chatname text-xl font-semibold">{selectedChat && getChatName(selectedChat)}</div>
                             <div className="details" onClick={() => setChatDetailsModal(true)}><FaEye size={"18px"} /></div>
-                            {chatDetailsModal && <div className="chatDetailsModal p-4 min-h-56 min-w-48 shadow-lg shadow-orange-400 absolute top-10 right-5"><span className="text-xl hover:bg-gray-200 px-2 rounded absolute top-0 right-0 m-2 mt-3 cursor-pointer" onClick={() => setChatDetailsModal(false)}>x</span>
+                            {chatDetailsModal && <div className="chatDetailsModal bg-white p-4 min-h-56 min-w-48 shadow-lg shadow-orange-400 absolute top-10 right-5"><span className="text-xl hover:bg-gray-200 px-2 rounded absolute top-0 right-0 m-2 mt-3 cursor-pointer" onClick={() => setChatDetailsModal(false)}>x</span>
                                 {selectedChat && selectedChat.isGroupChat ? <h2 className="text-lg text-orange-500 text-center mt-2 ">Group details</h2> : <h2 className="text-lg text-orange-500 text-center mt-2 ">User details</h2>}
 
                                 {selectedChat && selectedChat.isGroupChat === false
@@ -293,26 +302,26 @@ const Chatpage = () => {
                             </div>}
                         </div>
 
-                        <div className="all-messages bg-blue-500 h-[90vh]">
+                        <div className="all-messages h-[90vh]">
 
-                            <div className="h-[90%] bg-gray-300 flex flex-col gap-1 py-2 px-4 overflow-hidden overflow-y-auto">{
+                            <div className="h-[90%] flex flex-col gap-1 py-2 px-4 overflow-hidden overflow-y-auto">{
                                 (currentChatMessages && currentChatMessages.length > 0 &&
                                     currentChatMessages.map(message =>
-                                        <div className={`flex gap-2 ${(message.sender._id === user._id) ? "justify-end" : "justify-start"}`}>
+                                        <div className={`flex gap-2  ${(message.sender._id === user._id) ? "justify-end pl-12 md:pl-20 lg:pl-32" : "justify-start pr-12 md:pr-20 lg:pr-32"}`}>
                                             <div className="text-end">
                                                 <div className={`flex ${(message.sender._id === user._id) ? "justify-end" : "justify-start"} items-center gap-1`}><img className="h-4 rounded-full" src={message.sender.avatar} alt="" /><span className="text-sm text-gray-500">{message.sender.username}</span></div>
-                                                <div className={`border text-xl border-orange-500 w-fit max-width-[70%] px-4 rounded-lg ${(message.sender._id === user._id) ? "rounded-br-none bg-orange-500 text-white" : "rounded-tl-none"}`} key={message._id}>{message.content} <span className="text-xs text-gray-500">{formatDateTime(message.createdAt)}</span></div>
+                                                <div className={`border flex justify-between gap-2 items-end text-start text-lg border-orange-500 w-fit px-4 rounded-xl ${(message.sender._id === user._id) ? "rounded-br-none border border-orange-500 bg-green-500 text-white" : "rounded-tl-none"}`} key={message._id}>{message.content} <span className={`text-xs text-nowrap mb-1 ${(message.sender._id === user._id ? "text-gray-600" : "text-gray-500")}`}>{formatDateTime(message.createdAt)}</span></div>
                                             </div>
                                         </div>
 
                                     )
                                 )
                             }</div>
-                            <div className="h-[10%] bg-green-500 p-1 px-2 flex gap-2">
-                                <input type="text" placeholder="type message..." 
-                                value={message}
-                                onChange={(e) => setMessage(e.target.value)}
-                                className="h-full px-2 w-[90%] bg-gray-200 border border-gray-400 rounded-lg"/>
+                            <div className="h-[10%] p-1 px-2 flex gap-2">
+                                <input type="text" placeholder="type message..."
+                                    value={message}
+                                    onChange={(e) => setMessage(e.target.value)}
+                                    className="h-full px-2 w-[90%] bg-gray-200 border border-gray-400 rounded-lg" />
                                 <button onClick={handleSendMessage} className="text-white bg-orange-500 rounded-lg w-[10%] h-full ">send</button>
                             </div>
 
