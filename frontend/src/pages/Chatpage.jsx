@@ -1,6 +1,6 @@
 
 import axios from "axios";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CiEdit, CiLogout, CiSearch } from "react-icons/ci";
 import { useNavigate } from "react-router-dom";
 import { FaEye, FaPlus } from "react-icons/fa6";
@@ -23,6 +23,12 @@ const Chatpage = () => {
     const [chatDetailsModal, setChatDetailsModal] = useState(false);
     const [currentChatMessages, setCurrentChatMessages] = useState([]);
     const [message, setMessage] = useState("")
+    const [isSending, setIsSending] = useState(false)
+    
+    // declaring global variables to persist accross rerenders
+    const socketRef = useRef(null);
+    const selectedChatCompareRef = useRef();
+
     // fetch current userdata, feed it to state
     async function fetchUser() {
         const res = await axios.get("http://localhost:3001/api/user", {
@@ -32,10 +38,49 @@ const Chatpage = () => {
         })
         setUser(res.data.user)
     }
+
     useEffect(() => {
         fetchUser()
-        const socket = io("http://localhost:3001");
+        fetchChats()
     }, [])
+
+    useEffect(() => {
+        // eshtablish socket connection on mount
+        socketRef.current = io("http://localhost:3001")
+        // emit event to join user and assign it a private socket
+        socketRef.current.emit("user-join", user)
+
+    }, [user])
+
+    useEffect(() => {
+        if(!socketRef.current) return;
+        socketRef.current.emit("join-chat", selectedChat);
+    },[selectedChat])
+
+    useEffect(() => {
+        selectedChatCompareRef.current = selectedChat;
+    },[selectedChat])
+
+    useEffect(() => {
+        if(!socketRef.current) return;
+        socketRef.current.on("message-recieved",(newmessage) => {
+            console.log("new message recieved : : : : : " , newmessage);
+            // console.log(selectedChatCompareRef.current);
+            
+
+            if(selectedChat._id===newmessage.chat._id) setCurrentChatMessages(prev => [...prev,newmessage])
+            else{
+                alert("new notification!");
+            }
+
+        })
+        
+        // return old listener
+        return () => {
+            socketRef.current.off("message-recieved")
+        }
+    })
+
 
     // search chat functionality
     async function handleSearch() {
@@ -59,14 +104,11 @@ const Chatpage = () => {
         setChats(res.data.chats)
     }
 
-    useEffect(() => {
-        fetchChats()
-    }, [])
 
 
     // function to return a existing chat, if not, create a new one and return
     async function handleChat(id) {
-        console.log(id);
+        // console.log(id);
 
         try {
             const res = await axios.post("http://localhost:3001/api/chat",
@@ -79,7 +121,7 @@ const Chatpage = () => {
                     },
                 }
             );
-            console.log(res.data);
+            setSelectedChat(res.data);
         } catch (error) {
             console.error("Error creating chat:", error.response?.data || error.message);
         }
@@ -138,19 +180,35 @@ const Chatpage = () => {
             setCurrentChatMessages(res.data);
         }
         fetchMessages()
+    
+    // 
     }, [selectedChat])
 
     // function to send message 
     async function handleSendMessage() {
-        const res = await axios.post("http://localhost:3001/api/chat/message", {
-            chatId: selectedChat._id,
-            message: message
-        }, {
-            headers: {
-                authorization: `Bearer ${localStorage.getItem("token")}`
-            }
-        })
-        setCurrentChatMessages(prev => ([...prev, res.data]));
+        try {
+            setIsSending(true)
+            const res = await axios.post("http://localhost:3001/api/chat/message", {
+                chatId: selectedChat._id,
+                message: message
+            }, {
+                headers: {
+                    authorization: `Bearer ${localStorage.getItem("token")}`
+                }
+            })
+
+            // emit message to chatroom for broadcasting to all connected user in the room
+            socketRef.current.emit("send-message", res.data);
+
+            setIsSending(false);
+            setCurrentChatMessages(prev => ([...prev, res.data]));
+            setMessage("");
+        } catch (error) {
+            alert("Error sending message !");
+            console.error("Error sending message : ", error);
+            setMessage("")
+            setIsSending(false)
+        }
 
     }
 
@@ -245,21 +303,22 @@ const Chatpage = () => {
                     {chats && chats.length > 0 && chats.map((chatItem) =>
                         <div key={chatItem._id}
                             onClick={() => { setSelectedChat(chatItem) }}
-                            className={`border border-gray-400 ${(selectedChat && selectedChat._id === chatItem._id) ? "border-orange-500 bg-orange-100" : ""} p-1 flex items-center gap-2 rounded-lg hover:shadow-sm hover:shadow-orange-500`}
+                            className={`border truncate w-full overflow-hidden border-gray-400 ${(selectedChat && selectedChat._id === chatItem._id) ? "border-orange-500 bg-orange-100" : ""} p-1 flex items-center gap-2 rounded-lg hover:shadow-sm hover:shadow-orange-500`}
                         >
-                            <div className="h-7 w-7 bg-orange-500 text-white rounded-full flex items-center justify-center">
+                            <div className="min-h-7 min-w-7 bg-orange-500 text-white rounded-full flex items-center justify-center">
                                 {(chatItem.isGroupChat) ? <MdGroupAdd /> : getChatName(chatItem).split("")[0].toUpperCase()}
                             </div>
-                            <div>
+                            <div className="w-full truncate max-w-[80%]">
                                 {/* logic to dynamically render the chatname,  */}
                                 <div>{getChatName(chatItem)}</div>
                                 <div className="text-sm text-gray-400">
                                     {chatItem.latestMessage
-                                        ? <span className="text-gray-500 flex items-center gap-1">
-                                            <span className="font-semibold">{chatItem.latestMessage.sender._id === user._id ? <LiaCheckDoubleSolid size={"16px"}/> : null}  </span>
-                                            {chatItem.latestMessage.content}
-                                        </span>
-                                        : null}</div>
+                                        ? <div className="text-gray-500 flex items-center gap-1">
+                                            <div className="font-semibold">{chatItem.latestMessage.sender._id === user._id ? <LiaCheckDoubleSolid size={"16px"} /> : null}  </div>
+                                            <div className="truncate">{chatItem.latestMessage.content}</div>
+                                        </div>
+                                        : null}
+                                </div>
                             </div>
                         </div>)}
                 </div>
@@ -304,13 +363,20 @@ const Chatpage = () => {
 
                         <div className="all-messages h-[90vh]">
 
-                            <div className="h-[90%] flex flex-col gap-1 py-2 px-4 overflow-hidden overflow-y-auto">{
+                            <div className="h-[90%] flex flex-col gap-1 py-2 px-4 overflow-hidden overflow-y-auto pb-8">{
                                 (currentChatMessages && currentChatMessages.length > 0 &&
                                     currentChatMessages.map(message =>
-                                        <div className={`flex gap-2  ${(message.sender._id === user._id) ? "justify-end pl-12 md:pl-20 lg:pl-32" : "justify-start pr-12 md:pr-20 lg:pr-32"}`}>
-                                            <div className="text-end">
+                                        <div className={`flex gap-2 ${(message.sender._id === user._id) ? "justify-end pl-12 md:pl-24 lg:pl-40" : "justify-start pr-12 md:pr-24 lg:pr-40"}`}>
+                                            <div className="">
                                                 <div className={`flex ${(message.sender._id === user._id) ? "justify-end" : "justify-start"} items-center gap-1`}><img className="h-4 rounded-full" src={message.sender.avatar} alt="" /><span className="text-sm text-gray-500">{message.sender.username}</span></div>
-                                                <div className={`border flex justify-between gap-2 items-end text-start text-lg border-orange-500 w-fit px-4 rounded-xl ${(message.sender._id === user._id) ? "rounded-br-none border border-orange-500 bg-green-500 text-white" : "rounded-tl-none"}`} key={message._id}>{message.content} <span className={`text-xs text-nowrap mb-1 ${(message.sender._id === user._id ? "text-gray-600" : "text-gray-500")}`}>{formatDateTime(message.createdAt)}</span></div>
+                                                <div
+                                                    className={`border flex justify-between gap-2 items-end text-start text-normal border-orange-500 w-fit px-4 rounded-xl ${(message.sender._id === user._id) ? "rounded-br-none border border-orange-500 bg-green-500 text-white" : "rounded-tl-none"}`}
+                                                    key={message._id}>
+                                                    <span className="break-all">{message.content}</span>
+                                                    <span className={`text-[10px] text-nowrap mb-1 ${(message.sender._id === user._id ? "text-gray-600" : "text-gray-500")}`}>
+                                                        {formatDateTime(message.createdAt)}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -322,7 +388,9 @@ const Chatpage = () => {
                                     value={message}
                                     onChange={(e) => setMessage(e.target.value)}
                                     className="h-full px-2 w-[90%] bg-gray-200 border border-gray-400 rounded-lg" />
-                                <button onClick={handleSendMessage} className="text-white bg-orange-500 rounded-lg w-[10%] h-full ">send</button>
+                                <button
+                                    disabled={isSending}
+                                    onClick={handleSendMessage} className="text-white bg-orange-500 hover:bg-orange-600 cursor-pointer rounded-lg w-[10%] h-full ">{isSending ? "sending..." : "send"}</button>
                             </div>
 
                         </div>

@@ -33,8 +33,43 @@ const server = http.createServer(app)
 // Socket.io endpoints : for real time communication
 io.on("connection", (socket) => {
   console.log("client connected!", socket.id);
-  
   socket.send(`client connected! socket id : ${socket.id}`)
+
+  // user join event
+  socket.on("user-join", (user) => {
+    if(!user) return;
+    
+    // joined user to a dedicated room for privated message or notification
+    socket.join(user._id)
+    console.log("User joined", user._id);
+  })
+
+  // user joined a chat 
+  socket.on("join-chat", (chat) => {
+    if(!chat) return;
+
+    // join to a room  for 1-1 or group chat
+    socket.join(chat._id)
+    console.log("user joined chat room : ", chat._id);
+  })
+
+
+  //when a user sends a message 
+  socket.on("send-message", (message) => {
+    if(!message) return;
+    
+    // now as the message is recieved send it to all users in the room except the sender
+    message.chat.users.forEach((user) => {
+      if(user._id === message.sender._id ) return;
+      else{
+        console.log("message sent to other user !");
+        
+        socket.in(user._id).emit("message-recieved", message);
+      }
+    })
+    
+  })
+
 })
 
 
